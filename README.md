@@ -110,7 +110,7 @@ various assemblies are feasible. most will be a sandwich of the bare PCB and a 3
 
 # assembly guide
 
-![digitus16 kit assembly guide](https://wenzellabs.de/digitus16/)
+[digitus16 kit assembly guide](https://wenzellabs.de/digitus16/)
 
 ## 3d models
 
