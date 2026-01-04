@@ -17,6 +17,7 @@ from digit import Digit
 PIN_BUTTON = 7
 PIN_SDA = 8  # GPIO8 - I2C SDA for RTC
 PIN_SCL = 9  # GPIO9 - I2C SCL for RTC
+PIN_TEMP = 10  # GPIO10 - DS18B20 temperature sensor
 
 # Idle demo mode configuration
 T_IDLE_DEMOMODE = 10  # seconds of idle before showing time
@@ -67,6 +68,9 @@ MAX_ROLL_COUNT = 100 # maximum loops in phase 2
 
 # Global RTC I2C object
 rtc_i2c = None
+
+# Global temperature sensor
+temp_sensor = None
 
 def bcd_to_decimal(bcd):
     """Convert BCD (Binary Coded Decimal) to normal decimal"""
@@ -127,6 +131,101 @@ def read_rtc_time():
         print(f"RTC read error: {e}")
         return None
 
+def setup_temperature():
+    """Initialize DS18B20 temperature sensor on GPIO10"""
+    global temp_sensor
+    try:
+        import machine
+        import onewire
+        import ds18x20
+        
+        # Initialize OneWire on GPIO10
+        ow_pin = machine.Pin(PIN_TEMP)
+        ow = onewire.OneWire(ow_pin)
+        temp_sensor = ds18x20.DS18X20(ow)
+        
+        # Test if DS18B20 is connected
+        devices = temp_sensor.scan()
+        if len(devices) > 0:
+            print(f"Temperature sensor initialized ({len(devices)} device(s))")
+            return True
+        else:
+            print("No DS18B20 found on GPIO10")
+            temp_sensor = None
+            return False
+    except Exception as e:
+        print(f"Temperature sensor init failed: {e}")
+        temp_sensor = None
+        return False
+
+def read_temperature():
+    """Read temperature in Celsius from DS18B20, returns float or None"""
+    global temp_sensor
+    try:
+        if temp_sensor is None:
+            print("Temperature: sensor not initialized")
+            return None
+        
+        # Scan for DS18B20 devices
+        devices = temp_sensor.scan()
+        if len(devices) == 0:
+            print("Temperature: no devices found on bus")
+            return None
+        
+        # Start temperature conversion
+        temp_sensor.convert_temp()
+        
+        # Wait for conversion (DS18B20 needs ~750ms)
+        time.sleep(0.8)
+        
+        # Read temperature from first device
+        temperature = temp_sensor.read_temp(devices[0])
+        print(f"Temperature: {temperature:.1f}°C")
+        return temperature
+    except Exception as e:
+        print(f"Temperature read error: {e}")
+        return None
+
+def start_temperature_conversion():
+    """Start DS18B20 temperature conversion (non-blocking part)"""
+    global temp_sensor
+    try:
+        if temp_sensor is None:
+            return False
+        
+        # Scan for DS18B20 devices
+        devices = temp_sensor.scan()
+        if len(devices) == 0:
+            return False
+        
+        # Start temperature conversion (non-blocking)
+        temp_sensor.convert_temp()
+        return True
+    except Exception as e:
+        return False
+
+def finish_temperature_read():
+    """Read temperature after conversion has completed"""
+    global temp_sensor
+    try:
+        if temp_sensor is None:
+            print("Temperature: sensor not initialized")
+            return None
+        
+        # Scan for DS18B20 devices
+        devices = temp_sensor.scan()
+        if len(devices) == 0:
+            print("Temperature: no devices found on bus")
+            return None
+        
+        # Read temperature from first device (conversion should be done by now)
+        temperature = temp_sensor.read_temp(devices[0])
+        print(f"Temperature: {temperature:.1f}°C")
+        return temperature
+    except Exception as e:
+        print(f"Temperature read error: {e}")
+        return None
+
 def setup_display():
     """Initialize 2-digit display"""
     display = Display()
@@ -180,6 +279,7 @@ def roll_dice(display, start_index=None):
     color_index = 0
     
     # Phase 1: Roll for roll_time seconds
+    display.set_fg(WHITE_FG)
     start_time = time.time()
     while time.time() - start_time < roll_time:
         display.set_text(W20_seq[seq_index])
@@ -255,6 +355,7 @@ def main():
     display = setup_display()
     button = setup_button()
     setup_rtc()  # Initialize RTC
+    setup_temperature()  # Initialize temperature sensor
     
     # Track last position to continue rolling from there
     last_index = None
@@ -269,42 +370,60 @@ def main():
         last_button_state = button.value()
         
         while True:
-            button_state = button.value()
-            
-            # Detect button press (transition from 1 to 0, since pull-up)
-            if last_button_state == 1 and button_state == 0:
-                # Exit demo mode and roll
-                in_demo_mode = False
+            # If in demo mode, run the demo loop
+            if in_demo_mode:
+                # Run one cycle of the demo
+                button_pressed = show_time_demo_interruptible(display, button)
                 
-                print("\n🎲 Rolling...")
-                random.seed(time.ticks_us())
-                result, last_index = roll_dice(display, last_index)
-                print(f"Result: {result.strip()}")
+                if button_pressed:
+                    # Button was pressed during demo - exit to dice mode and roll
+                    in_demo_mode = False
+                    
+                    print("\n🎲 Rolling...")
+                    random.seed(time.ticks_us())
+                    result, last_index = roll_dice(display, last_index)
+                    print(f"Result: {result.strip()}")
+                    
+                    # Reset idle timer on activity
+                    last_activity_time = time.time()
+                    
+                    # Show result
+                    display.set_text(result)
+                    display.set_fg(WHITE_FG)
+                    display.set_bg(BLACK_BG)
+                    display.render()
+                    
+                    # Update button state
+                    last_button_state = button.value()
+                # else: demo completed normally, loop continues
+            else:
+                # In dice mode - check for button presses and idle timeout
+                button_state = button.value()
                 
-                # Reset idle timer on activity
-                last_activity_time = time.time()
+                # Detect button press (transition from 1 to 0, since pull-up)
+                if last_button_state == 1 and button_state == 0:
+                    print("\n🎲 Rolling...")
+                    random.seed(time.ticks_us())
+                    result, last_index = roll_dice(display, last_index)
+                    print(f"Result: {result.strip()}")
+                    
+                    # Reset idle timer on activity
+                    last_activity_time = time.time()
+                    
+                    # Show result
+                    display.set_text(result)
+                    display.set_fg(WHITE_FG)
+                    display.set_bg(BLACK_BG)
+                    display.render()
                 
-                # Show result
-                display.set_text(result)
-                display.set_fg(WHITE_FG)
-                display.set_bg(BLACK_BG)
-                display.render()
-            
-            # Check for idle timeout to return to demo mode
-            if not in_demo_mode:
+                # Check for idle timeout to return to demo mode
                 idle_time = time.time() - last_activity_time
                 if idle_time >= T_IDLE_DEMOMODE:
                     print("\n⏰ Returning to demo mode...")
                     in_demo_mode = True
-            
-            # If in demo mode, run the demo (it loops internally)
-            if in_demo_mode:
-                # Check for button press inside demo to exit quickly
-                # We'll break out of demo on button press
-                show_time_demo_interruptible(display, button)
-            
-            last_button_state = button_state
-            time.sleep(0.001)  # Small delay to prevent busy-waiting
+                
+                last_button_state = button_state
+                time.sleep(0.001)  # Small delay to prevent busy-waiting
                 
     except KeyboardInterrupt:
         print("\n\nStopping dice roller...")
@@ -315,17 +434,35 @@ def main():
 
 def show_time_demo_interruptible(display, button):
     """
-    Show time demo but check for button presses to exit quickly
-    Returns when button is pressed
+    Show complete demo sequence:
+    1. Time (HH/MM/SS with values)
+    2. Rainbow animation
+    3. Temperature (°C with value)
+    4. Rainbow animation
+    
+    Returns True if button was pressed (interrupted), False if completed normally
     """
+    # Helper to check button during sleep
+    def interruptible_sleep(duration):
+        start = time.time()
+        while time.time() - start < duration:
+            if button.value() == 0:  # Button pressed
+                return False  # Signal to exit
+            time.sleep(0.01)
+        return True  # Continue
+    
+    # === TIME DISPLAY ===
+    
     # Read time from RTC
     time_tuple = read_rtc_time()
     if time_tuple is None:
         # Fallback to system time
         t = time.localtime()
         hours, minutes, seconds = t[3], t[4], t[5]
+        print(f"Time: {hours:02d}:{minutes:02d}:{seconds:02d} (system)")
     else:
         hours, minutes, seconds = time_tuple
+        print(f"Time: {hours:02d}:{minutes:02d}:{seconds:02d} (RTC)")
     
     # Format values as 2-digit strings
     hh_val = f"{hours:02d}"
@@ -343,63 +480,107 @@ def show_time_demo_interruptible(display, button):
     
     display.set_bg(BLACK_BG)
     
-    # Helper to check button during sleep
-    def interruptible_sleep(duration):
-        start = time.time()
-        while time.time() - start < duration:
-            if button.value() == 0:  # Button pressed
-                return False  # Signal to exit
-            time.sleep(0.01)
-        return True  # Continue
-    
     # "HH" with rainbow gradient
     display.set_text("HH")
     display.set_gradient_fg('x', RAINBOW_COLORS)
     display.render()
     if not interruptible_sleep(1.0):
-        return
+        return True  # Button pressed
     
     # Actual hours with hue-based color
     display.set_text(hh_val)
     display.set_fg(hh_color)
     display.render()
     if not interruptible_sleep(1.0):
-        return
+        return True  # Button pressed
     
     # "MM" with rainbow gradient
     display.set_text("MM")
     display.set_gradient_fg('x', RAINBOW_COLORS)
     display.render()
     if not interruptible_sleep(1.0):
-        return
+        return True  # Button pressed
     
     # Actual minutes with hue-based color
     display.set_text(mm_val)
     display.set_fg(mm_color)
     display.render()
     if not interruptible_sleep(1.0):
-        return
+        return True  # Button pressed
     
     # "SS" with rainbow gradient
     display.set_text("SS")
     display.set_gradient_fg('x', RAINBOW_COLORS)
     display.render()
     if not interruptible_sleep(1.0):
-        return
+        return True  # Button pressed
     
     # Actual seconds with hue-based color
     display.set_text(ss_val)
     display.set_fg(ss_color)
     display.render()
     if not interruptible_sleep(1.0):
-        return
+        return True  # Button pressed
     
-    # Rainbow animation (also interruptible)
-    rainbow_animation_interruptible(display, button, duration=5.0)
+    # === RAINBOW ANIMATION ===
+    if rainbow_animation_interruptible(display, button, duration=5.0):
+        return True  # Button pressed during animation
+    
+    # === TEMPERATURE DISPLAY ===
+    
+    # Start temperature conversion in background (takes ~800ms)
+    start_temperature_conversion()
+    
+    # While conversion is happening, show "°C" label
+    # "°C" with rainbow gradient
+    display.set_text("\xb0C")  # °C
+    display.set_gradient_fg('x', RAINBOW_COLORS)
+    display.render()
+    if not interruptible_sleep(1.0):
+        return True  # Button pressed
+    
+    # By now, temperature conversion should be complete
+    # Read the temperature result
+    temp_c = finish_temperature_read()
+    
+    if temp_c is not None:
+        # Format temperature as 2-digit integer
+        temp_val = f"{int(temp_c):2d}"
+        
+        # Calculate hue based on temperature (similar to blonkenclick color mapping)
+        # Blue (cold) to red (hot): 0°C = 240° hue, 30°C = 0° hue
+        if temp_c < 0:
+            temp_hue = 240
+        elif temp_c > 30:
+            temp_hue = 0
+        else:
+            # Linear mapping: 0°C -> 240°, 30°C -> 0°
+            temp_hue = int(240 - (temp_c / 30.0) * 240)
+        
+        temp_color = hue_to_rgb(temp_hue)
+    else:
+        # Sensor failed - show error
+        temp_val = "ER"
+        temp_color = (0xFF, 0x00, 0x00)  # Red for error
+    
+    # Display temperature value for full 1 second
+    display.set_text(temp_val)
+    display.set_fg(temp_color)
+    display.render()
+    if not interruptible_sleep(1.0):
+        return True  # Button pressed
+    
+    # === FINAL RAINBOW ANIMATION ===
+    if rainbow_animation_interruptible(display, button, duration=5.0):
+        return True  # Button pressed during animation
+    
+    # Completed full cycle without interruption
+    return False
 
 def rainbow_animation_interruptible(display, button, duration=5.0):
     """
     Rainbow animation that can be interrupted by button press
+    Returns True if button was pressed, False if completed normally
     """
     start_time = time.time()
     color_offset = 0
@@ -409,7 +590,7 @@ def rainbow_animation_interruptible(display, button, duration=5.0):
     while time.time() - start_time < duration:
         # Check for button press
         if button.value() == 0:
-            return
+            return True  # Button pressed
         
         # Create a rainbow gradient that shifts over time
         colors = []
@@ -425,6 +606,7 @@ def rainbow_animation_interruptible(display, button, duration=5.0):
     
     display.set_fg(WHITE_FG)
     display.set_bg(BLACK_BG)
+    return False  # Completed normally
 
 if __name__ == "__main__":
     main()
