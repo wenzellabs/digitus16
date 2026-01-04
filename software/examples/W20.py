@@ -20,7 +20,7 @@ PIN_SCL = 9  # GPIO9 - I2C SCL for RTC
 PIN_TEMP = 10  # GPIO10 - DS18B20 temperature sensor
 
 # Idle demo mode configuration
-T_IDLE_DEMOMODE = 10  # seconds of idle before showing time
+T_IDLE_DEMOMODE = 55  # seconds of idle before showing time
 
 # W20 sequence - alternates between low and high numbers
 W20_seq = [
@@ -76,6 +76,10 @@ def bcd_to_decimal(bcd):
     """Convert BCD (Binary Coded Decimal) to normal decimal"""
     return ((bcd >> 4) * 10) + (bcd & 0x0F)
 
+def decimal_to_bcd(decimal):
+    """Convert normal decimal to BCD (Binary Coded Decimal)"""
+    return ((decimal // 10) << 4) | (decimal % 10)
+
 def hue_to_rgb(hue):
     """Convert hue (0-360 degrees) to RGB color (0-255)"""
     # Normalize hue to 0-1 range
@@ -107,9 +111,104 @@ def setup_rtc():
         scl = machine.Pin(PIN_SCL)
         rtc_i2c = machine.I2C(0, scl=scl, sda=sda, freq=100000)
         print("RTC initialized")
+        
+        # Check and set time if needed
+        check_and_init_rtc()
+        
         return True
     except Exception as e:
         print(f"RTC init failed: {e}")
+        return False
+
+def set_ds1307_time(hours, minutes, seconds):
+    """Set time on DS1307 RTC"""
+    try:
+        if rtc_i2c is None:
+            return False
+
+        # Convert to BCD format
+        sec_bcd = decimal_to_bcd(seconds) & 0x7F  # Clear clock halt bit
+        min_bcd = decimal_to_bcd(minutes)
+        hour_bcd = decimal_to_bcd(hours) & 0x3F   # 24-hour format
+
+        # Write seconds, minutes, hours
+        data = bytes([sec_bcd, min_bcd, hour_bcd])
+        rtc_i2c.writeto_mem(0x68, 0x00, data)
+        
+        print(f"RTC time set to {hours:02d}:{minutes:02d}:{seconds:02d}")
+        return True
+
+    except Exception as e:
+        print(f"Failed to set RTC time: {e}")
+        return False
+
+def get_system_time():
+    """Get system time (hours, minutes, seconds)"""
+    t = time.localtime()
+    return (t[3], t[4], t[5])
+
+def check_and_init_rtc():
+    """Check if RTC needs initialization and set time if needed"""
+    try:
+        if rtc_i2c is None:
+            return False
+
+        # Read seconds register to check clock halt bit
+        data = rtc_i2c.readfrom_mem(0x68, 0x00, 1)
+        seconds_reg = data[0]
+
+        set_time = False
+        use_system_time = False
+
+        # Check if clock halt bit (bit 7) is set
+        if (seconds_reg & 0x80) != 0:
+            print("RTC clock halt bit set - needs initialization")
+            set_time = True
+            use_system_time = True
+
+        # Check if a file "set_time.txt" exists to force time set
+        try:
+            with open("set_time.txt", "r") as f:
+                line = f.readline().strip()
+                print(f"Found set_time.txt: '{line}'")
+                
+                # Check if format is correct (HH:MM:SS)
+                if len(line) == 8 and line[2] == ':' and line[5] == ':':
+                    try:
+                        hours, minutes, seconds = map(int, line.split(":"))
+                        if 0 <= hours <= 23 and 0 <= minutes <= 59 and 0 <= seconds <= 59:
+                            # Valid time in file - use it
+                            print(f"Using time from file: {hours:02d}:{minutes:02d}:{seconds:02d}")
+                            import os
+                            os.remove("set_time.txt")
+                            return set_ds1307_time(hours, minutes, seconds)
+                        else:
+                            print("Time values out of range - using system time")
+                    except ValueError:
+                        print("Could not parse time - using system time")
+                else:
+                    print("Wrong format in set_time.txt - using system time")
+                
+                # File exists but wrong format - use system time
+                import os
+                os.remove("set_time.txt")
+                set_time = True
+                use_system_time = True
+                
+        except OSError:
+            # File doesn't exist - that's OK
+            pass
+
+        # Set time from system if needed
+        if set_time and use_system_time:
+            hours, minutes, seconds = get_system_time()
+            print(f"Using system time: {hours:02d}:{minutes:02d}:{seconds:02d}")
+            return set_ds1307_time(hours, minutes, seconds)
+
+        return True
+
+    except Exception as e:
+        print(f"RTC init check failed: {e}")
         return False
 
 def read_rtc_time():
