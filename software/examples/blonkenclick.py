@@ -793,13 +793,13 @@ def func_loop():
             loop_counter += 1
 
             # Special case: display battery every 1000 loops for 100 loops
-            if loop_counter % 1000 < 100:
-                result = display_battery()
-                # Render and display result
-                if result is not None:
-                    display.render()
-                    print(f"[RTCBAT] {result}")
-                continue
+#            if loop_counter % 1000 < 100:
+#                result = display_battery()
+#                # Render and display result
+#                if result is not None:
+#                    display.render()
+#                    print(f"[RTCBAT] {result}")
+#                continue
 
             current_time = get_time_ms()
 
