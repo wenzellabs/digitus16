@@ -92,29 +92,71 @@ for now, just see the [`software/examples/`](software/examples/) subfolder
 
 # hardware
 
+## what you get
 kit's content (top to bottom):
-
-- screen
 
 - 3d-printed bezel and diffusor
 
-- main PCB with 16 SPI addressable RGB LEDs per digit
+- main PCB with 6 digits of 16 SPI addressable RGB LEDs each
 
-- interconnect strip for multiple digits
+- 4-pin main male connector for power and SPI signals
 
-- 4-pin main connector for power and SPI signals
+- 4-pin main female connector for power and SPI signals
 
-![digitus16 kit](pic/digitus16_kit.jpg)
+![digitus16x6 kit](pic/digitus16x6_kit.jpg)
 
-various assemblies are feasible. most will be a sandwich of the bare PCB and a 3d-printed bezel and diffusor. but the digits also come with a thin PCB as diffusor. we've also successfully used bezels that were laser-cut from wood or PMMA (although PMMA becomes very brittle with the thin structures).
+various assemblies are feasible. most will be a sandwich of the bare PCB and a 3d-printed bezel and diffusor. we've also successfully used bezels that were laser-cut from wood or PMMA (although PMMA becomes very brittle with the thin structures). Or paper, wood or other materials can be used as yet another diffusor and to have a uniform clean surface.
 
-# assembly guide
+## mechanical
 
-[digitus16 kit assembly guide](https://wenzellabs.de/digitus16/)
+- display height: 26.7mm
+- display height center: 24.5mm
+- display width: 106.7mm
+- display thickness: 5.0mm (PCB + 3d-printed bezel and diffusor)
 
-## 3d models
+see the [`3d/`](3d/) subfolder for 3D models.
 
-see the [`3d/`](3d/) subfolder
+front view:
+
+![digitus16x6 front](pic/digitus16x6_front.png)
+
+back view:
+
+![digitus16x6 back](pic/digitus16x6_back.png)
+
+## electrical interface
+
+- 5V power supply in
+- GND
+- SPI clock in **CI** (3.3V level or 5V level)
+- SPI data in **DI** (3.3V level or 5V level)
+- optional:
+    - 5V power supply out
+    - GND
+    - SPI clock out **CO** (5V level)
+    - SPI data out **DO** (5V level)
+
+## current/power
+
+absolute maximum current / power @5V, all LEDs 100% white, full brightness: 485mA / 2.425W
+
+maximum current / power @5V, all LEDs 100% white, recommended maxiumum brightness (15 of 31): 280mA / 1.4W
+
+the LEDs have a brightness setting 0-31. we recommend you only drive the LEDs up to a maxiumum brightness level of 15, otherwise you get the self-explanatory warning from the API:
+```
+>>> display.set_brightness(31)
+setting high brightness values is not recommended due to reduced LED lifetime!
+```
+
+## assembly guide
+
+remove the 3d-printed bezel and diffusor before soldering.
+
+solder the four pins for the 5V and data connection to the main PCB, either vertical to the back, or flat to the bottom, according to your mounting requirements.
+
+the pinout is documented on the backside of the PCB. see also the photo above.
+
+only after all soldering is done snap the 3d-printed bezel and diffusor back on the main pcb. it should clip on firmly, and glueing is possible but probably not necessary.
 
 ## why SK9822/APA102 and not WS2812B flavoured RGB LEDs
 
