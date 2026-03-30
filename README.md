@@ -2,11 +2,9 @@
 
 digitus16 is a 16-segment RGB display.
 
-it comes as single digit or up to six digits on a single PCB. software-wise many more columns and rows can be combined.
+it comes as six digits on a single PCB. the boards can be daisy-chained for larger displays. software supports both, X and Y extensions.
 
-comes with a 3d-printed screen and interconnect boards to simplify combining 2, 4 or 6 digits to a larger display.
-
-there's an optional screen from PCB material with nice gold edged segments.
+comes with a 3d-printed screen as bezel and diffusor.
 
 the single digit or whole display is controlled through a simple 2-wire SPI interface and can be hooked up to pretty much any microcontroller.
 
