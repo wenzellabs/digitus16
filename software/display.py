@@ -1,5 +1,5 @@
 
-from digit import Digit
+from digit import Digit, SEGMENT_16_ORDER
 import sys
 
 class Layer:
@@ -22,6 +22,8 @@ class Display:
         self.y_cursor = 0
 
         self.mode = 'alphanum'  # or 'raw'
+
+        self._twinkle_led = None
 
         self.text = ''
         self.text_anim_direction = 'left'  # or 'right'
@@ -212,6 +214,30 @@ class Display:
     def render(self):
         self.text_render()
 
+    def twinkle(self, mask=None):
+        """Schedule one white, full-brightness LED for the next render.
+
+        mask maps 0-based digit indexes to allowed segment labels, e.g.
+        {0: "ab", 5: "mt"}. Segment labels are defined in digit.py.
+        """
+        import random
+
+        candidates = []
+        if mask is None:
+            candidates = self.ordered_leds
+        else:
+            for digit_index, segment_names in mask.items():
+                if not isinstance(digit_index, int) or not 0 <= digit_index < len(self.digits):
+                    raise ValueError("mask digit indexes must refer to an existing digit")
+                for segment_name in segment_names:
+                    if segment_name not in SEGMENT_16_ORDER:
+                        raise ValueError("mask contains an unknown 16-segment label")
+                    segment_index = SEGMENT_16_ORDER.index(segment_name)
+                    candidates.append(self.digits[digit_index].get_leds()[segment_index])
+
+        self._twinkle_led = random.choice(candidates) if candidates else None
+        return self._twinkle_led is not None
+
     def set_char(self, index: int, char: str):
         if 0 <= index < self.digit_count:
             self.digits[index].turn_off()
@@ -233,7 +259,12 @@ class Display:
             for i in range(self.digit_count):
                 self.digits[self.digit_count - 1 - i].set_char(visible[i])
 
+        twinkle_led = self._twinkle_led
+        self._twinkle_led = None
+
         def led_to_sk9822_bytes(led):
+            if led is twinkle_led:
+                return bytes([0xFF, 0xFF, 0xFF, 0xFF])
             state = led.get_color()
             r, g, b = state
             return bytes([0b11100000 | self.brightness, b, g, r])

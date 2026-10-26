@@ -6,6 +6,7 @@ with seasonal color gradients for foreground and background
 
 import sys
 sys.path.insert(0, '..')
+import random
 import time
 from display import Display, Layer
 from digit import Digit
@@ -103,6 +104,11 @@ def main():
     # Cycle through seasons
     season_index = 0
 
+    def render_frame():
+        if current_name == "Winter" and random.random() < 0.2:
+            display.twinkle()
+        display.render()
+
     def interpolate_color(color1, color2, t):
         """Interpolate between two RGB colors. t=0 gives color1, t=1 gives color2"""
         r1, g1, b1 = color1
@@ -128,7 +134,7 @@ def main():
             current_name, current_fg, current_bg = current_season
             next_name, next_fg, next_bg = next_season
 
-            print(f"\nDisplaying: {current_name.strip()} -> {next_name.strip()}")
+            print(f"Displaying: {current_name.strip()} -> {next_name.strip()}")
 
             # Animation settings
             fps = 10
@@ -147,12 +153,12 @@ def main():
                 t = step / fade_steps  # 0.0 to 1.0
                 fade_bg = interpolate_gradient(current_bg, black_bg, t)
                 display.set_gradient_bg('y', fade_bg)
-                display.render()
+                render_frame()
                 time.sleep(step_time)
 
             # Sub-phase 1b: BG stays black (1 second)
             display.set_gradient_bg('y', black_bg)
-            display.render()
+            render_frame()
             time.sleep(1.0)
 
             # Sub-phase 1c: BG morph back from black (1 second)
@@ -160,7 +166,7 @@ def main():
                 t = step / fade_steps  # 0.0 to 1.0
                 fade_bg = interpolate_gradient(black_bg, current_bg, t)
                 display.set_gradient_bg('y', fade_bg)
-                display.render()
+                render_frame()
                 time.sleep(step_time)
 
             # Phase 2: Morph colors over 4 seconds, change word at 2 seconds
@@ -186,7 +192,7 @@ def main():
                 display.set_text(current_word)
                 display.set_gradient_fg('y', morph_fg)
                 display.set_gradient_bg('y', morph_bg)
-                display.render()
+                render_frame()
 
                 time.sleep(step_time)
 
