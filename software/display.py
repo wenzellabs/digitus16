@@ -437,6 +437,7 @@ class Display:
         """
         Set a gradient of FG/BG colors along the given axis ('x' or 'y') using the provided list of (r,g,b) colors.
         LEDs are sorted by axis, and colors are linearly interpolated between the given colors.
+        Horizontal positions are mirrored within each digit.
         """
         assert axis in ('x', 'X', 'v', 'V', 'y', 'Y', 'h', 'H'), "axis must be 'x' or 'v' or 'y' or 'h'"
         if axis in ('X', 'v', 'V'):
@@ -446,9 +447,19 @@ class Display:
             return
         # Get LED positions and group by position
         if axis == 'x':
+            mirrored_x = {}
+            for digit in self.digits:
+                digit_leds = digit.get_leds()
+                if not digit_leds:
+                    continue
+                left = min(led.get_x() for led in digit_leds)
+                right = max(led.get_x() for led in digit_leds)
+                for led in digit_leds:
+                    mirrored_x[led] = left + right - led.get_x()
+
             led_positions = {}
             for i, led in enumerate(self.ordered_leds):
-                pos = led.get_x()
+                pos = mirrored_x.get(led, led.get_x())
                 if pos not in led_positions:
                     led_positions[pos] = []
                 led_positions[pos].append(i)
